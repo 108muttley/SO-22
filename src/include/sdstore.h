@@ -8,3 +8,5 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include "functions.h"
+#define MAX_SIZE 1024
+#define MAX_TAREFA 50

@@ -15,3 +15,20 @@ ssize_t myreadln(int fd, char *line, size_t size){
 	}
 	return size1;
 }
+
+char* createBuf(int argc, char* argv[]){
+    int tam = 0;
+    int i;
+    int k = 0;
+    for(i = 0; i < argc ; i++) tam += strlen(argv[i]);
+    char * buf = malloc(sizeof(char) * (tam + argc-2 + 1)); // tamanho dos argumentos + o numero de espaços + \0
+    for(i = 1 ; i<argc; i++){
+        strcpy(buf+k,argv[i]);
+        k += strlen(argv[i]);
+        if(i != argc-1){
+            buf[k++] = ' ';
+        }
+    }
+    buf[k] = '\0';
+    return buf;
+}
