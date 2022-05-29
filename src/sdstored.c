@@ -37,50 +37,11 @@ int current = -1, maxTarefas = 0, currentQ = -1, maxQueue = 0, maxClientes = -1;
 Configuration configuration;
 int fd_cl_sv_read, fd_sv_cl_write;
 int fd_clientes[50];
+int pidClientes[50];
+int emExec = 0;
+int fd_ficticio = 0;
+int pidPai = 0;
 
-
-void signIntHandler(int signum){
-	close(fd_cl_sv_read);
-	close(fd_sv_cl_write);
-	if(fork() == 0){
-		execlp("rm","rm","fifo c->s",NULL);
-		_exit(0);
-	}
-	if(fork() == 0){
-		execlp("rm","rm","fifo s->c",NULL);
-		_exit(0);
-	}
-
-	for(int i = 0; i<3;i++){
-		wait(0L);
-	}
-	for(int i = 0; i<maxTarefas;i++){
-		if(tarefas[i]->inputfile) free(tarefas[i]->inputfile);
-		if (tarefas[i]->outputfile) free(tarefas[i]->outputfile);
-		if(tarefas[i]->string) free(tarefas[i]->string);
-		for(int j = 0; j<tarefas[i]->nrTransf; j++){
-			if(tarefas[i]->transf[j]) free(tarefas[i]->transf[j]);
-		}
-		free(tarefas[i]->transf);
-		free(tarefas[i]);
-	}
-	for(int i = 0; i<currentQ;i++){
-		if(stack[i]->inputfile) free(stack[i]->inputfile);
-		if (stack[i]->outputfile) free(stack[i]->outputfile);
-		if(stack[i]->string) free(stack[i]->string);
-		for(int j = 0; j<stack[i]->nrTransf; j++){
-			if(stack[i]->transf[j]) free(stack[i]->transf[j]);
-		}
-		free(tarefas[i]->transf);
-		free(tarefas[i]);
-	}
-
-	if(configuration->path_exec) free(configuration->path_exec);
-
-	free(tarefas);
-	free(stack);
-	_exit(0);
-}
 
 
 //lê o ficheiro conf para guardar as informações do máximo de cada transformação e guardar o path para os executáveis
@@ -168,11 +129,17 @@ int temRecursos(char** comandos, int nrComandos, int* nop, int* bcompress, int* 
 
 int exec_tarefa(char** comandos, int nrComandos, char* inputfile, char* outputfile){
 	int filein = open(inputfile, O_RDONLY);
+	int bytes_input = 0;
 	int pipes[nrComandos-1][2];
 	if(filein < 0){
 		perror("open input file");
 		return -1;
 	}
+
+	bytes_input = lseek(filein, 0, SEEK_END);
+	//printf("bytes_input: %d\n", bytes_input);
+	int location = lseek(filein, 0, SEEK_SET);
+	//printf("location: %d\n", location);
 
 	int fileout = open(outputfile, O_CREAT | O_TRUNC | O_WRONLY, 0640);
 	if(fileout < 0){
@@ -256,25 +223,153 @@ int exec_tarefa(char** comandos, int nrComandos, char* inputfile, char* outputfi
 		wait(NULL);
 		j++;
 	}
+	lseek(fileout, 0, SEEK_SET);
+	int bytes_output = lseek(fileout, 0, SEEK_END);
+
 	int fd_temp;
 	if((fd_temp = open("fifo c->s", O_WRONLY)) == -1){
 		perror("fifo cl-sv pelo filho");
 	}
 	else{
 		char buffer[MAX_SIZE] = "";
- 		sprintf(buffer, "%s %s %d%s", "FINISH", "task:", current+1, "\0");
+ 		sprintf(buffer, "%s %s %d ", "FINISH", "task:", current+1);
  		sleep(20);
-		printf("Vai imprimir\n");
-		printf("CURRENT: %d\n",tarefas[current]->idCliente);
+		//printf("Vai imprimir\n");
+		//printf("CURRENT: %d\n",tarefas[current]->idCliente);
 		write(fd_temp, buffer, strlen(buffer));
-		printf("ola\n");
-		write(fd_clientes[tarefas[current]->idCliente], "Concluded\n", 10);
+		//printf("ola\n");
+		char buffer2[MAX_SIZE] = "";
+		sprintf(buffer2, "%s%d%s%d%s", "Concluded (bytes_input: ", bytes_input, ", bytes_output: ", bytes_output, ")$");
+		write(fd_clientes[tarefas[current]->idCliente], buffer2, strlen(buffer2));
+		//write(fd_clientes[tarefas[current]->idCliente], "exit\n", 5);
 	}
 	close(fd_temp);
 	close(fd_clientes[tarefas[current]->idCliente]);
 	_exit(0);
 
 }
+
+
+void signIntHandler(int signum){
+	int bytes_read = 0;
+	char buf[MAX_SIZE];
+	int pidAtual = getpid();
+	/*printf("PID ATUAL: %d\n", pidAtual);
+	printf("PID PAI: %d\n", pidPai);
+	//printf("EM EXECUÇÂO: %d\n", emExec );
+	if (pidAtual == pidPai){
+		while((bytes_read = read(fd_cl_sv_read, buf, MAX_SIZE)) > 0 && emExec>0){
+		printf("Entrei Final\n");
+		printf("EM EXECUÇÂO: %d\n", emExec );
+		buf[bytes_read] = '\0';
+		char* input = malloc(strlen(buf) * sizeof(char));
+		strcpy(input, buf);
+		char* token = strtok(buf, " ");
+		printf("input signal: %s\n", input );
+		if (strcmp(token, "FINISH") == 0){
+			token = strtok(NULL, " ");
+			printf("token : %s\n", token);
+			token = strtok(NULL, " ");
+			printf("token : %s\n", token);
+			int tar = atoi(token);
+			token = strtok(NULL, " ");
+			printf("Token: %s\n", token);
+			printf("tarefa: %d terminada\n",tar);
+			emExec--;
+			printf("AGORA: %d\n", emExec);
+			for (int i = 0; i < tarefas[tar-1]->nrTransf; ++i){
+				if (!strcmp(tarefas[tar-1]->transf[i], "nop")) configuration->nop++;
+				else if (!strcmp(tarefas[tar-1]->transf[i], "bcompress")) configuration->bcompress++;
+				else if (!strcmp(tarefas[tar-1]->transf[i], "bdecompress")) configuration->bdecompress++;
+				else if (!strcmp(tarefas[tar-1]->transf[i], "gcompress")) configuration->gcompress++;
+				else if (!strcmp(tarefas[tar-1]->transf[i], "gdecompress")) configuration->gdecompress++;
+				else if (!strcmp(tarefas[tar-1]->transf[i], "encrypt")) configuration->encrypt++;
+				else configuration->decrypt++;
+			}
+			tarefas[tar-1]->status=3;
+			if (currentQ>=0){
+				printf("entrei\n");
+				for (int j = 0; j <= currentQ; ++j){
+					int nop=0, bcompress=0, bdecompress=0, gcompress=0, gdecompress=0, encrypt=0, decrypt=0;
+					if (temRecursos(stack[j]->transf, stack[j]->nrTransf, &nop, &bcompress, &bdecompress, &gcompress, &gdecompress, &encrypt, &decrypt)){
+						current++;
+						emExec++;
+						printf("signIntHandler stack: %d\n", emExec );
+						configuration->nop = configuration->nop - nop;
+						configuration->bcompress = configuration->bcompress - bcompress;
+						configuration->bdecompress = configuration->bdecompress - bdecompress;
+						configuration->gcompress = configuration->gcompress - gcompress;
+						configuration->gdecompress = configuration->gdecompress - gdecompress;
+						configuration->encrypt = configuration->encrypt - encrypt;
+						configuration->decrypt = configuration->decrypt - decrypt;
+						tarefas[current] = malloc(1 * sizeof(struct tarefa));
+						tarefas[current]=stack[j];
+						if (fork()==0){
+							write(fd_clientes[tarefas[current]->idCliente], "Processing\n", 11);
+							exec_tarefa(stack[j]->transf, stack[j]->nrTransf, stack[j]->inputfile, stack[j]->outputfile);
+						}
+						else{
+							if (currentQ>0){
+								for (int z = j; z < currentQ; z++){  
+	    							stack[z] = stack[z+1]; // assign stack[i+1] to stack[i] 
+	    						} 
+							}
+							j--;
+	    					currentQ--;
+						}
+					}
+				}
+			}
+		}
+	
+	}
+	*/
+	close(fd_ficticio);
+	//printf("fechei\n");
+	close(fd_sv_cl_write);
+	close(fd_cl_sv_read);
+	
+	if(fork() == 0){
+		execlp("rm","rm","fifo c->s",NULL);
+		_exit(0);
+	}
+	if(fork() == 0){
+		execlp("rm","rm","fifo s->c",NULL);
+		_exit(0);
+	}
+
+	for(int i = 0; i<3;i++){
+		wait(0L);
+	}
+	for(int i = 0; i<maxTarefas;i++){
+		if(tarefas[i]->inputfile) free(tarefas[i]->inputfile);
+		if (tarefas[i]->outputfile) free(tarefas[i]->outputfile);
+		if(tarefas[i]->string) free(tarefas[i]->string);
+		for(int j = 0; j<tarefas[i]->nrTransf; j++){
+			if(tarefas[i]->transf[j]) free(tarefas[i]->transf[j]);
+		}
+		free(tarefas[i]->transf);
+		free(tarefas[i]);
+	}
+	for(int i = 0; i<currentQ;i++){
+		if(stack[i]->inputfile) free(stack[i]->inputfile);
+		if (stack[i]->outputfile) free(stack[i]->outputfile);
+		if(stack[i]->string) free(stack[i]->string);
+		for(int j = 0; j<stack[i]->nrTransf; j++){
+			if(stack[i]->transf[j]) free(stack[i]->transf[j]);
+		}
+		free(tarefas[i]->transf);
+		free(tarefas[i]);
+	}
+
+	if(configuration->path_exec) free(configuration->path_exec);
+
+	free(tarefas);
+	free(stack);
+	_exit(0);
+	//}
+}
+	
 
 
 int interpreter(char* input){
@@ -285,8 +380,12 @@ int interpreter(char* input){
 	char* inputfile, *outfile;
 	char** comandos;
 	comandos = malloc(30 * sizeof(char*));
+	int priority = 0;
 	int pid=0, nrComandos=0,i=0, nop=0, bcompress=0, bdecompress=0, gcompress=0, gdecompress=0, encrypt=0, decrypt=0;
 	if (strcmp(string, "proc-file") == 0){
+		string = strtok(NULL, " ");
+		priority = atoi(string);
+		printf("priority: %d\n", priority);
 		string = strtok(NULL, " ");
 		inputfile = malloc(strlen(string) * sizeof(char));
 		strcpy(inputfile, string);
@@ -303,13 +402,15 @@ int interpreter(char* input){
 		nrComandos = i;
 		maxTarefas++;
 		if (temRecursos(comandos, nrComandos, &nop, &bcompress, &bdecompress, &gcompress, &gdecompress, &encrypt, &decrypt)){
+			emExec++;
+			printf("Começou EXECUÇÂO: %d\n", emExec);
 			current++;
 			tarefas[current] = malloc(1 * sizeof(struct tarefa));
 			tarefas[current]->transf = comandos;
+			tarefas[current]->priority = priority;
 			tarefas[current]->nrTransf = nrComandos;
 			tarefas[current]->string = aux;
 			tarefas[current]->pidFilho = pid;
-			tarefas[current]->priority = 0;
 			tarefas[current]->idCliente = maxClientes;
 			tarefas[current]->status = 1; //em execução 
 			tarefas[current]->inputfile = inputfile;
@@ -321,27 +422,65 @@ int interpreter(char* input){
 			configuration->gdecompress = configuration->gdecompress - gdecompress;
 			configuration->encrypt = configuration->encrypt - encrypt;
 			configuration->decrypt = configuration->decrypt - decrypt;
+			printf("Vai processar normalmente\n");
 			write(fd_clientes[tarefas[current]->idCliente], "Processing\n", 11);
-			printf("NOP: %d\n", nop);
-			printf("Config : NOP -> %d\n", configuration->nop );
+			//printf("NOP: %d\n", nop);
+			//printf("Config : NOP -> %d\n", configuration->nop );
 			if((pid = fork()) == 0){
+				sleep(20);
 				exec_tarefa(comandos, nrComandos, inputfile, outfile);
 			}
 
 		}
 		else{
 			maxQueue++;
+			
+			int pos = -1;
+			int z = 0;
+			for (z = 0; z <= currentQ; z++){
+				if (stack[z]->priority < priority){
+					pos = z;
+					printf("Alterei posição da stack\n");
+					break;
+				}
+			}
+			if (pos == -1){
+				pos = currentQ + 1;
+			}
+			printf("currentQ: %d\n", currentQ);
+			printf("pos: %d\n", pos);
 			currentQ++;
 			stack[currentQ] = malloc(1 * sizeof(struct tarefa));
-			stack[currentQ]->transf = comandos;
-			stack[currentQ]->nrTransf = nrComandos;
-			stack[currentQ]->idCliente = maxClientes;
-			stack[currentQ]->string = aux;
-			stack[currentQ]->pidFilho = 0;
-			stack[currentQ]->priority = 0;
-			stack[currentQ]->outputfile = outfile;
-			stack[currentQ]->inputfile = inputfile;
-			stack[currentQ]->status = 2;
+
+
+			for (z = 0; z <= currentQ; z++){
+				printf("//%d stack id cliente : %d\n",z, stack[z]->idCliente);
+				printf("//priority: %d\n", stack[z]->priority);
+			}
+
+			for (z = currentQ; z > pos; z--){
+				printf("idCliente: %d\n", stack[z-1]->idCliente);
+        		stack[z] = stack[z - 1];
+			}
+
+			stack[pos] = malloc(1 * sizeof(struct tarefa));
+			stack[pos]->transf = comandos;
+			stack[pos]->nrTransf = nrComandos;
+			stack[pos]->idCliente = maxClientes;
+			printf("idCliente pos: %d\n", stack[pos]->idCliente);
+			stack[pos]->string = aux;
+			stack[pos]->pidFilho = 0;
+			stack[pos]->priority = priority;
+			stack[pos]->outputfile = outfile;
+			stack[pos]->inputfile = inputfile;
+			stack[pos]->status = 2;
+
+			for (z = 0; z <= currentQ; z++){
+				printf("%d stack id cliente : %d\n",z, stack[z]->idCliente);
+				printf("priority: %d\n", stack[z]->priority);
+			}
+
+
 			write(fd_clientes[maxClientes], "Pending\n", 8);
 			printf("Acrescentado à stack\n");
 
@@ -350,7 +489,7 @@ int interpreter(char* input){
 	else if(strcmp("status", string) == 0){
 		if (fork()==0){
 			for (int i = 0; i < maxTarefas; ++i){
-				printf("Entrei\n");
+				//printf("Entrei\n");
 				if (tarefas[i]->status == 1){
 					char* token = malloc(strlen(tarefas[i]->string) * sizeof(char));
 					strcpy(token, tarefas[i]->string);
@@ -367,7 +506,7 @@ int interpreter(char* input){
 			snprintf(gcompressAux, sizeof(gcompressAux), "transf gcompress: %d/%d (running/max)\n", (configuration->maxGcompress - configuration->gcompress), configuration->maxGcompress);
 			snprintf(gdecompressAux, sizeof(gdecompressAux), "transf gdecompress: %d/%d (running/max)\n", (configuration->maxGdecompress-configuration->gdecompress), configuration->maxGdecompress);
 			snprintf(encryptAux, sizeof(encryptAux), "transf encrypt: %d/%d (running/max)\n", (configuration->maxEncrypt-configuration->encrypt), configuration->maxEncrypt);
-			snprintf(decryptAux, sizeof(decryptAux), "transf decrypt: %d/%d (running/max)\n", (configuration->maxDecrypt-configuration->decrypt), configuration->maxDecrypt);
+			snprintf(decryptAux, sizeof(decryptAux), "transf decrypt: %d/%d (running/max)$", (configuration->maxDecrypt-configuration->decrypt), configuration->maxDecrypt);
 			write(fd_clientes[maxClientes], nopAux, strlen(nopAux));
 			write(fd_clientes[maxClientes], bcompressAux, strlen(bcompressAux));
 			write(fd_clientes[maxClientes], bdecompressAux, strlen(bdecompressAux));
@@ -375,6 +514,7 @@ int interpreter(char* input){
 			write(fd_clientes[maxClientes], gdecompressAux, strlen(gdecompressAux));
 			write(fd_clientes[maxClientes], encryptAux, strlen(encryptAux));
 			write(fd_clientes[maxClientes], decryptAux, strlen(decryptAux));
+			//write(fd_clientes[maxClientes], "exit\n", 5);
 			_exit(0);
 		}
 	}
@@ -383,6 +523,8 @@ int interpreter(char* input){
 		string = strtok(NULL, " ");
 		int tar = atoi(string);
 		printf("tarefa: %d terminada\n",tar);
+		emExec--;
+		//printf("Recebeu Finish: %d\n", emExec );
 		for (int i = 0; i < tarefas[tar-1]->nrTransf; ++i)
 		{
 			if (!strcmp(tarefas[tar-1]->transf[i], "nop")) configuration->nop++;
@@ -396,10 +538,13 @@ int interpreter(char* input){
 		tarefas[tar-1]->status=3;
 		if (currentQ>=0){
 			printf("entrei\n");
-			for (int j = 0; j <= currentQ; ++j){
+			for (int j = 0; j <= currentQ; j++){
+				printf("currentQ: %d\n", currentQ );
 				int nop=0, bcompress=0, bdecompress=0, gcompress=0, gdecompress=0, encrypt=0, decrypt=0;
 				if (temRecursos(stack[j]->transf, stack[j]->nrTransf, &nop, &bcompress, &bdecompress, &gcompress, &gdecompress, &encrypt, &decrypt)){
 					current++;
+					emExec++;
+					//printf("STACK EXEC: %d\n",emExec );
 					configuration->nop = configuration->nop - nop;
 					configuration->bcompress = configuration->bcompress - bcompress;
 					configuration->bdecompress = configuration->bdecompress - bdecompress;
@@ -408,16 +553,27 @@ int interpreter(char* input){
 					configuration->encrypt = configuration->encrypt - encrypt;
 					configuration->decrypt = configuration->decrypt - decrypt;
 					tarefas[current] = malloc(1 * sizeof(struct tarefa));
-					tarefas[current]=stack[j];
+					tarefas[current]->idCliente = stack[j]->idCliente;
+					tarefas[current]->transf = stack[j]->transf;
+					tarefas[current]->nrTransf = stack[j]->nrTransf;
+					tarefas[current]->string = stack[j]->string;
+					tarefas[current]->pidFilho = stack[j]->pidFilho;
+					tarefas[current]->priority = stack[j]->priority;
+					tarefas[current]->outputfile = stack[j]->outputfile;
+					tarefas[current]->inputfile= stack[j]->inputfile;
+					tarefas[current]->status= 1;
 					if (fork()==0){
-						write(fd_clientes[tarefas[current]->idCliente], "Processing\n", 11);
-						exec_tarefa(stack[j]->transf, stack[j]->nrTransf, stack[j]->inputfile, stack[j]->outputfile);
+						printf("Vai processar na stack\n");
+						printf("j: %d\n", j);
+						write(fd_clientes[tarefas[current]->idCliente], "Processing\n;", 11);
+						exec_tarefa(tarefas[current]->transf, tarefas[current]->nrTransf, tarefas[current]->inputfile, tarefas[current]->outputfile);
 					}
 					else{
 						if (currentQ>0){
-						for (int z = j; z < currentQ; z++){  
-    					stack[z] = stack[z+1]; // assign stack[i+1] to stack[i] 
-    					} 
+							for (int z = j; z < currentQ; z++){  
+    							stack[z] = stack[z+1]; 
+    							printf("priority: %d\n", stack[z+1]->priority);// assign stack[i+1] to stack[i] 
+    						} 
 						}
 						j--;
     					currentQ--;
@@ -425,8 +581,6 @@ int interpreter(char* input){
 				}
 			}
 		}
-
-
 	}
 	printf("Saí fora do interpretador\n");
 	return 1;
@@ -434,10 +588,10 @@ int interpreter(char* input){
 
 int main(int argc, char *argv[]){
 	char buf[MAX_SIZE];
-	int fd_ficticio;
 	int bytes_read = 0;
 	signal(SIGINT,signIntHandler);
-
+	pidPai = getpid();
+	//printf("PID PAI: %d\n", pidPai);
 
 	if((fd_cl_sv_read = open("fifo c->s",O_RDONLY)) == -1){
 		perror("open");
@@ -476,10 +630,10 @@ int main(int argc, char *argv[]){
 		char* token = strtok(buf, " ");
 		if (strcmp(token,"PID")==0){
 			token = strtok(NULL, " ");
-			printf("%s\n",token );
+			//printf("%s\n",token );
 			int fdfifo = atoi(token);
 			token = strtok(NULL, "\0");
-			printf("%s\n", token);
+			//printf("%s\n", token);
 			maxClientes++;
 			char fifo[MAX_SIZE];
 			snprintf(fifo, sizeof(fifo), "%s %d", "fifo", fdfifo);
@@ -487,16 +641,19 @@ int main(int argc, char *argv[]){
 			if((fdCliente = open(fifo, O_WRONLY))==-1){
 				perror("FIFO CLIENTE");
 			}
-			else
+			else{
 				fd_clientes[maxClientes] = fdCliente;
+				pidClientes[maxClientes] = fdfifo;
+			}
+
 			interpreter(token);
 			bzero(buf, MAX_SIZE * sizeof(char));
 
 		}
 
 		else if(strcmp(token, "FINISH")==0){
-			printf("%s\n", input);
-			printf("%s\n", token);
+			//printf("%s\n", input);
+			//printf("%s\n", token);
 			interpreter(input);
 		}
 

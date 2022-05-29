@@ -17,11 +17,21 @@ char* createBufArgs(int argc, char* argv[]){
     return buf;
 }
 
+int fd_cliente = 0, res = 0;
+
+
+void sigALRM(int signum){
+    close(fd_cliente);
+}
+
 
 int main(int argc, char *argv[]){
-	char buf[MAX_SIZE], buffer[MAX_SIZE]="";
-	int fd_cl_sv_write, fd_sv_cl_read, fd_cliente=0;
+    signal(SIGALRM, sigALRM);
+	char buf[1], buffer[MAX_SIZE]="";
+	int fd_cl_sv_write, fd_sv_cl_read;
     int pid, bytes_read=0;
+    char recebido[1024]="";
+    int atual = 0;
 
     if((fd_cl_sv_write = open("fifo c->s",O_WRONLY)) == -1){ // open named pipe for write (cliente -> sv)
         perror("open");
@@ -58,7 +68,6 @@ int main(int argc, char *argv[]){
     			printf("%s\n", aux);
     			char temp[] = "Status atual do server solicitado\n\0";
     			write(1, temp, strlen(temp));
-
     		}  
     		if(strcmp(argv[1], "exit") == 0){
 		    	char* aux = createBufArgs(argc, argv);
@@ -70,6 +79,7 @@ int main(int argc, char *argv[]){
     		
     		else if(strcmp(argv[1], "proc-file") == 0){
     			char* aux = createBufArgs(argc, argv);
+                printf("AUX: %s\n", aux);
     			char input[MAX_SIZE]="";
     			snprintf(input, sizeof(input), "PID %d %s", pid, aux);
     			write(fd_cl_sv_write, input, strlen(input));
@@ -88,8 +98,27 @@ int main(int argc, char *argv[]){
     		}
     		else
         		printf("[DEBUG] opened fifo cliente for [reading]\n");
-    		while((bytes_read = read(fd_cliente, buf, MAX_SIZE)) > 0){
-    			write(1, buf, bytes_read);
+    		while(read(fd_cliente, buf, 1) > 0){
+                //printf("buf: %c\n", buf[0]);
+                if (buf[0] == '\n'){
+                    recebido[atual] = '\n';
+                    recebido[atual+1] = '\0';
+                    write(1, recebido, strlen(recebido));
+                    recebido[0] = '\0';
+                    atual = 0;
+                }
+                else if (buf[0] != '$'){
+                    recebido[atual] = buf[0];
+                    atual++;
+                }
+                else{
+                    recebido[atual] = '\0';
+                    char* input = malloc(strlen(recebido) * sizeof(char));
+                    strcpy(input, recebido);
+                    write(1, recebido, strlen(recebido));
+                    close(fd_cliente);
+                    atual = 0;
+                }
 			}
     	}
     }
