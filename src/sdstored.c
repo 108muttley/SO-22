@@ -480,12 +480,12 @@ void signIntHandler(int signum){
 				}
 			}
 			if (emExec == 0 && currentQ==-1){
-				write(1, "Closing...\n", 11);
 				break;
 			}	
 	
 		}
 	}
+	write(1, "Closing...\n", 11);
 
 
 	close(fd_ficticio);

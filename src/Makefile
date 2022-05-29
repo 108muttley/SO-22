@@ -1,21 +1,20 @@
-CC = gcc -Wall
-
 all: server client
 
-server: sdstored
+server: bin/sdstored
 
-client: sdstore
+client: bin/sdstore
 
-sdstore: sdstore.c
-	$(CC) sdstore.c -o sdstore
+bin/sdstored: obj/sdstored.o
+		gcc -g obj/sdstored.o -o bin/sdstored
 
-sdstored: sdstored.c
-	$(CC) sdstored.c -o sdstored
+obj/sdstored.o: sdstored.c
+		gcc -Wall -g -c sdstored.c -o obj/sdstored.o
+
+bin/sdstore: obj/sdstore.o
+		gcc -g obj/sdstore.o -o bin/sdstore
+
+obj/sdstore.o: sdstore.c
+		gcc -Wall -g -c sdstore.c -o obj/sdstore.o
 
 clean:
-	@rm -rf *.dSYM
-	@rm fifo*
-	@rm mkfifo
-	@rm sdstored
-	@rm sdstore
-
+	rm obj/* bin/sdstored bin/sdstore
