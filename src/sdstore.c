@@ -13,23 +13,18 @@ char* createBufArgs(int argc, char* argv[]){
             buf[k++] = ' ';
         }
     }
-    buf[k] = '\0';
+    buf[k] = '$';
+    buf[k+1] = '\0';
     return buf;
 }
 
 int fd_cliente = 0, res = 0;
 
 
-void sigALRM(int signum){
-    close(fd_cliente);
-}
-
-
 int main(int argc, char *argv[]){
-    signal(SIGALRM, sigALRM);
 	char buf[1], buffer[MAX_SIZE]="";
-	int fd_cl_sv_write, fd_sv_cl_read;
-    int pid, bytes_read=0;
+	int fd_cl_sv_write;
+    int pid;
     char recebido[1024]="";
     int atual = 0;
 
@@ -40,15 +35,15 @@ int main(int argc, char *argv[]){
     else 
         printf("[DEBUG] opened fifo cl-sv for [writing]\n");
 
-    if((fd_sv_cl_read = open("fifo s->c",O_RDONLY)) == -1){ // open named pipe for read (sv -> cliente)
+    /*if((fd_sv_cl_read = open("fifo s->c",O_RDONLY)) == -1){ // open named pipe for read (sv -> cliente)
        perror("open");
         return -1;
     }
     else
-        printf("[DEBUG] opened fifo cl-sv for [reading]\n");
+        printf("[DEBUG] opened fifo cl-sv for [reading]\n");*/
 
 	pid = getpid();
-	printf("PID: %d\n", pid);
+	//printf("PID: %d\n", pid);
 
 	snprintf(buffer, sizeof(buffer), "%s %d", "fifo", pid);
 
@@ -65,7 +60,7 @@ int main(int argc, char *argv[]){
     			char input[MAX_SIZE]="";
     			snprintf(input, sizeof(input), "PID %d %s", pid, aux);
     			write(fd_cl_sv_write, input, strlen(input));
-    			printf("%s\n", aux);
+    			//printf("%s\n", aux);
     			char temp[] = "Status atual do server solicitado\n\0";
     			write(1, temp, strlen(temp));
     		}  
@@ -73,13 +68,12 @@ int main(int argc, char *argv[]){
 		    	char* aux = createBufArgs(argc, argv);
 		   		write(fd_cl_sv_write, aux, strlen(aux));
 		   		close(fd_cl_sv_write);
-		   		close(fd_sv_cl_read);
-		   		return 0;
+                execlp("rm","rm",buffer,NULL);
     		}
     		
     		else if(strcmp(argv[1], "proc-file") == 0){
     			char* aux = createBufArgs(argc, argv);
-                printf("AUX: %s\n", aux);
+                //printf("AUX: %s\n", aux);
     			char input[MAX_SIZE]="";
     			snprintf(input, sizeof(input), "PID %d %s", pid, aux);
     			write(fd_cl_sv_write, input, strlen(input));
@@ -87,7 +81,6 @@ int main(int argc, char *argv[]){
     			write(1, temp, strlen(temp));
     		}
     		close(fd_cl_sv_write);
-    		close(fd_sv_cl_read);
     		_exit(0);
 
     	}
@@ -112,7 +105,8 @@ int main(int argc, char *argv[]){
                     atual++;
                 }
                 else{
-                    recebido[atual] = '\0';
+                    recebido[atual] = '\n';
+                    recebido[atual+1] = '\0';
                     char* input = malloc(strlen(recebido) * sizeof(char));
                     strcpy(input, recebido);
                     write(1, recebido, strlen(recebido));
@@ -129,7 +123,6 @@ int main(int argc, char *argv[]){
     }
 
     close(fd_cl_sv_write);
-    close(fd_sv_cl_read);
     close(fd_cliente);
     execlp("rm","rm",buffer,NULL);
 
