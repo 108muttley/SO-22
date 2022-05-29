@@ -35,7 +35,7 @@ Tarefa* tarefas;
 Tarefa* stack;
 int current = -1, maxTarefas = 0, currentQ = -1, maxQueue = 0, maxClientes = -1;
 Configuration configuration;
-int fd_cl_sv_read, fd_sv_cl_write;
+int fd_cl_sv_read;
 int fd_clientes[50];
 int emExec = 0;
 int fd_ficticio = 0;
@@ -489,7 +489,6 @@ void signIntHandler(int signum){
 
 
 	close(fd_ficticio);
-	close(fd_sv_cl_write);
 	close(fd_cl_sv_read);
 	
 	if(fork() == 0){
@@ -564,6 +563,8 @@ int main(int argc, char *argv[]){
 
 	else {
 		write(1, "Argumentos inválidos\n", 22);
+		close(fd_cl_sv_read);
+		close(fd_ficticio);
 		return -1;
 	}
 

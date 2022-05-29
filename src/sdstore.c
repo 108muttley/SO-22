@@ -35,15 +35,8 @@ int main(int argc, char *argv[]){
     else 
         printf("[DEBUG] opened fifo cl-sv for [writing]\n");
 
-    /*if((fd_sv_cl_read = open("fifo s->c",O_RDONLY)) == -1){ // open named pipe for read (sv -> cliente)
-       perror("open");
-        return -1;
-    }
-    else
-        printf("[DEBUG] opened fifo cl-sv for [reading]\n");*/
-
+    //printf("tamanho do buffer: %d\n", PIPE_BUF);
 	pid = getpid();
-	//printf("PID: %d\n", pid);
 
 	snprintf(buffer, sizeof(buffer), "%s %d", "fifo", pid);
 
@@ -60,20 +53,11 @@ int main(int argc, char *argv[]){
     			char input[MAX_SIZE]="";
     			snprintf(input, sizeof(input), "PID %d %s", pid, aux);
     			write(fd_cl_sv_write, input, strlen(input));
-    			//printf("%s\n", aux);
     			char temp[] = "Status atual do server solicitado\n\0";
     			write(1, temp, strlen(temp));
-    		}  
-    		if(strcmp(argv[1], "exit") == 0){
-		    	char* aux = createBufArgs(argc, argv);
-		   		write(fd_cl_sv_write, aux, strlen(aux));
-		   		close(fd_cl_sv_write);
-                execlp("rm","rm",buffer,NULL);
     		}
-    		
     		else if(strcmp(argv[1], "proc-file") == 0){
     			char* aux = createBufArgs(argc, argv);
-                //printf("AUX: %s\n", aux);
     			char input[MAX_SIZE]="";
     			snprintf(input, sizeof(input), "PID %d %s", pid, aux);
     			write(fd_cl_sv_write, input, strlen(input));
@@ -92,7 +76,6 @@ int main(int argc, char *argv[]){
     		else
         		printf("[DEBUG] opened fifo cliente for [reading]\n");
     		while(read(fd_cliente, buf, 1) > 0){
-                //printf("buf: %c\n", buf[0]);
                 if (buf[0] == '\n'){
                     recebido[atual] = '\n';
                     recebido[atual+1] = '\0';
